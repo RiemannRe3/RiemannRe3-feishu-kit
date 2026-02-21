@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+.feishu_bookmarks.json
 
 # Python
 __pycache__/
@@ -53,3 +54,5 @@ htmlcov/
 *.log
 *.tmp
 .cache/
+.cursor/
+.*.json
