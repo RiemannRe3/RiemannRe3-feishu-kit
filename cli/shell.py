@@ -4,7 +4,8 @@
 交互式命令行，支持浏览云盘目录和知识库（Wiki）、创建/重命名/移动/删除文件。
 
 依赖：requests, python-dotenv, prompt_toolkit
-运行：python3 feishu_cli.py
+安装：pip install -e .（项目根目录）
+运行：feishu  或  python -m cli.shell
 
 云盘命令：
   ls / ls -l          列出当前目录（-l 显示 token）
@@ -40,13 +41,9 @@ import os
 import sys
 import json
 
-try:
-    from dotenv import load_dotenv
-    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    # override=True：.env 文件的值优先，避免 `source .env` 残留的旧 Shell 变量干扰
-    load_dotenv(_env_path, override=True)
-except ImportError:
-    pass
+# 加载项目根目录的 .env 文件（override=True 防止旧 Shell 变量干扰）
+from feishu_kit.config import load_config as _load_feishu_config
+_load_feishu_config()
 
 from typing import List, Dict, Optional, Tuple, Any
 from prompt_toolkit import PromptSession
@@ -55,10 +52,10 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from prompt_toolkit.history import InMemoryHistory
 
-from feishu_drive_api import FeishuDriveAPI, FILE_TYPE_FOLDER
-from feishu_sheet_builder import FeishuSheetBuilder
-from feishu_bitable_builder import FeishuBitableBuilder
-from feishu_wiki_api import FeishuWikiAPI
+from feishu_kit.drive_api import FeishuDriveAPI, FILE_TYPE_FOLDER
+from feishu_kit.sheet_builder import FeishuSheetBuilder
+from feishu_kit.bitable_builder import FeishuBitableBuilder
+from feishu_kit.wiki_api import FeishuWikiAPI
 
 
 # ────────────────────────────────────────────
@@ -240,8 +237,10 @@ class FeishuShell:
         self._wiki_available: bool = False
 
         # 书签：别名 → {token, space_id, title, url}
+        # 与 feishu_kit.client 共享同一个 .feishu_bookmarks.json（项目根目录）
         self._bm_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), ".feishu_bookmarks.json"
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            ".feishu_bookmarks.json",
         )
         self._bookmarks: Dict[str, Dict] = self._load_bookmarks()
 
@@ -411,51 +410,62 @@ class FeishuShell:
             print(_c("请检查 .env 中的 FEISHU_APP_ID / FEISHU_APP_SECRET", COL_YELLOW))
             return
 
-        # ── 步骤2：尝试连接云盘（drive）────────────────────────────────
+        # 读取用户偏好：FEISHU_DEFAULT_MODE = wiki | drive | auto（默认 auto）
+        default_mode = os.environ.get("FEISHU_DEFAULT_MODE", "auto").strip().lower()
+
+        # ── 步骤2：按需检测云盘（wiki/auto 模式跳过 drive 检测）──────────
         self._drive_available = False
         drive_err = ""
-        if self.api.root_folder_token:
+        if default_mode != "wiki" and self.api.root_folder_token:
             try:
                 self.api.list_files(self.api.root_folder_token)
                 self._drive_available = True
             except Exception as e:
                 drive_err = str(e)
 
-        # ── 步骤3：尝试连接知识库（wiki）──────────────────────────────
-        self._wiki_available = False
-        wiki_err = ""
-        try:
-            self.wiki_api._get_token()  # 与 drive 共用同一 app，验证即可
-            self._wiki_available = True
-        except Exception as e:
-            wiki_err = str(e)
+        # ── 步骤3：wiki 始终可用（与 drive 共用 token）────────────────────
+        self._wiki_available = True  # token 已在步骤1验证成功
 
-        # ── 步骤4：根据可用权限设置起始状态 ───────────────────────────
-        if self._drive_available:
+        # ── 步骤4：根据偏好和可用权限设置起始状态 ─────────────────────────
+        use_wiki_start = (
+            default_mode == "wiki"
+            or (default_mode == "auto" and not self._drive_available)
+        )
+
+        if not use_wiki_start and self._drive_available:
+            # 云盘模式启动
             root_name = (
                 os.environ.get("FEISHU_ROOT_NAME")
                 or f"…{self.api.root_folder_token[-8:]}"
             )
             self.path_stack = [(root_name, self.api.root_folder_token)]
             self.mode_stack = ["drive"]
-            mode_hint = ""
-        elif self._wiki_available:
-            # 降级到 wiki-only：以空路径启动，等用户 wiki node / wiki spaces 导航
+            start_msg = ""
+        else:
+            # Wiki 模式启动
             self.path_stack = []
             self.mode_stack = []
-            mode_hint = (
-                _c("  [!] 云盘权限不足，已降级为 Wiki 模式\n", COL_YELLOW) +
-                _c(f"      云盘错误: {drive_err[:120]}\n", COL_GREY) +
-                _c("      可用命令: wiki spaces / wiki node <token> / wiki @<别名>\n", COL_GREY)
-            )
-        else:
-            print(_c(f"\n连接失败:\n  drive: {drive_err}\n  wiki:  {wiki_err}", COL_RED))
-            print(_c("请检查 .env 中的凭证和权限配置", COL_YELLOW))
-            return
+            if default_mode == "wiki":
+                start_msg = _c("  📖 Wiki 模式（FEISHU_DEFAULT_MODE=wiki）\n", COL_MAGENTA)
+            elif drive_err:
+                start_msg = (
+                    _c("  [!] 云盘权限不足，已切换为 Wiki 模式\n", COL_YELLOW) +
+                    _c(f"      {drive_err[:100]}\n", COL_GREY)
+                )
+            else:
+                start_msg = _c("  📖 Wiki 模式\n", COL_MAGENTA)
 
         print(_c(" ✓", COL_GREEN))
-        if mode_hint:
-            print(mode_hint)
+        if start_msg:
+            print(start_msg)
+
+        # ── Wiki 启动：自动显示书签列表（如有） ─────────────────────────
+        if use_wiki_start and self._bookmarks:
+            print(_c("  书签（可用 cd @<别名> 或 wiki @<别名> 快速跳转）:", COL_BOLD))
+            for alias, info in sorted(self._bookmarks.items()):
+                title = info.get("title", "")
+                print(f"    {_c('@' + alias, COL_MAGENTA):<22} {title}")
+            print()
 
         while True:
             try:
@@ -848,9 +858,6 @@ class FeishuShell:
             if dst_node is None:
                 print(_c(f'目标节点未找到: "{dst}"', COL_YELLOW))
                 return
-            if not dst_node.get("has_child", False):
-                # 目标可以是叶子，只要它是容器（wiki 允许移动到任意节点）
-                pass
             self.wiki_api.move_node(
                 self.wiki_space_id,
                 src_node["node_token"],

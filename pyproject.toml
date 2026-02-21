@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "feishu-kit"
+version = "0.1.0"
+description = "飞书工具包：Drive、Wiki、Bitable、Sheets 的 Python API 封装 + 交互式 CLI"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.28",
+    "python-dotenv>=1.0",
+    "prompt_toolkit>=3.0",
+]
+
+[project.scripts]
+feishu = "cli.shell:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["feishu_kit*", "cli*"]
