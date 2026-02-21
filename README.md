@@ -33,7 +33,7 @@
 
 ```bash
 git clone <this-repo>
-cd d03_feishu
+cd <this-repo>
 
 pip install requests python-dotenv prompt_toolkit
 
