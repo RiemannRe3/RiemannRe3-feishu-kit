@@ -17,11 +17,14 @@
 |------|:---:|:----------:|
 | 浏览云盘/Wiki 目录（ls / cd / pwd） | ✓ | ✓ |
 | 打开文件网页链接 | ✓ | ✓ |
-| 创建文件夹 / Wiki 文档节点 | ✓ | ✓ |
-| 创建多维表格 / 电子表格 | ✓ | ✓ |
+| 在 Wiki 下创建文档节点（docx） | ✓ | ✓ `node.create_child()` |
+| 在 Wiki 下创建电子表格节点 | ✓ | ✓ `node.create_child(obj_type="sheet")` |
+| 在 Wiki 下创建多维表格节点 | ✓ | ✓ `node.create_child(obj_type="bitable")` |
+| 在云盘创建多维表格 / 电子表格 | ✓ | ✓ `client.create_*_in_drive()` |
 | 移动 / 删除文件 | ✓ | — |
 | 向多维表格写入/查询记录 | — | ✓ |
 | 向电子表格写入/追加数据 | — | ✓ |
+| 读取文档（docx）纯文本内容 | — | ✓ `node.read_content()` |
 | 书签系统（快速跳转 Wiki 节点） | ✓ | ✓（共享书签文件） |
 
 ---
@@ -223,6 +226,34 @@ sheet.write([
 # 追加行
 sheet.append([["exp_003", 0.98, 0.15]])
 ```
+
+### 在 Wiki 中创建节点（文档 / 电子表格 / 多维表格）
+
+```python
+# 先通过书签定位父节点
+parent = client.goto("@bot")          # WikiNode
+
+# 创建文档（docx）
+doc_node = parent.create_child("实验日志_2026", obj_type="docx")
+print(doc_node.url)   # 打印飞书链接
+
+# 创建电子表格（sheet）并立即写入数据
+sheet_wiki_node = parent.create_child("周报_0221", obj_type="sheet")
+sheet = sheet_wiki_node.to_sheet()    # 转换为 SheetNode
+sheet.write([
+    ["实验名称", "Acc", "Loss"],
+    ["exp_001",   0.95,  0.23],
+])
+
+# 创建多维表格（bitable）并追加记录
+bitable_wiki_node = parent.create_child("实验结果_2026", obj_type="bitable")
+bitable = bitable_wiki_node.to_bitable()   # 转换为 BitableNode
+bitable.append_rows([
+    {"实验名称": "exp_001", "Acc": 0.95},
+], table_name="Sheet1")
+```
+
+> `create_child` 需要知识库编辑权限（`wiki:wiki`）且应用已加入知识库成员。
 
 ### 在云盘创建文件
 
